@@ -1,20 +1,23 @@
 #############################################################################
-#### Simulate the effect of Anakinra drug on each sample and compare ######
+#### Simulate the effect of Anakinra drug on each sample and compare  ######
 #############################################################################
 
 library(pacman)
 devtools::install_github("thomasp85/patchwork")
 
-pacman::p_load("here", "hipathia", "utils", "stringr", "genefilter", "tidyr","data.table", "xlsx","limma", "ggplot2")
+pacman::p_load("here", "hipathia", "utils", "stringr", "genefilter", "tidyr","data.table","limma", "ggplot2", "patchwork")
 
 ### 1. Load data and perform gene action of ANAKINRA --> IL1R1 entrezID:3554 ####
 
 ## Load normalized expression data
 logcpm <- readRDS(file = here("rds", "logcpm_bloodTranscriptome.rds"))
-metadata_init <- fread(file = "/home/m3m/INFO_PROYECTO/autoinmunes/data/Blood.Transcriptome/CS.Transcriptome.Metadata.csv")
+metadata_init <- fread(file = here("data", "Blood.Transcriptome_Julio2020", "CS.Transcriptome.Metadata.csv"))
 
 ## Subset only disease samples
 logcpm_dis <- logcpm[, which(colnames(logcpm) %in% metadata_init$PublicID[metadata_init$DISEASE != "CONTROLS"])]
+
+trans_data <- translate_data(logcpm_dis, "hsa")
+saveRDS(trans_data, file = here("rds", "trans_data_onlydiseases.rds"))
 
 metadata_init <- metadata_init[metadata_init$DISEASE != "CONTROLS",]
 
@@ -32,17 +35,18 @@ subpathways_phy <- data.frame(unlist(subpathways.list), stringsAsFactors = F)
 
 colnames(subpathways_phy) <- "hipathia"
 
+
+#### 2.  SIMULATION OF ANAKINRA DRUG KO of gene "3554" ANAKINRA --> IL1R1 entrezID:3554 ######
+
 "3554" %in% pathways$all.genes ## Checking that ANAKIRNA's target is in Hipathia
 
 metadata_KO <- metadata_init
 metadata_KO$PublicID <- paste0(metadata_KO$PublicID, "_3354KO")
 metadata_KO$type <- "treated"
 
-#### 2.  KO of gene "3554" ANAKINRA --> IL1R1 entrezID:3554 ######
 
 ## Run HiPathia and LIMMA for all samples  besides controls ###
 
-trans_data <- translate_data(logcpm_dis, "hsa")
 "3554" %in% rownames(trans_data) ## Checking that ANAKIRNA's target is in the dataset
 
 trans_data_KO <- trans_data
@@ -116,19 +120,9 @@ exp_data_KO_C <- normalize_data(trans_data_KO_C)
                           stringsAsFactors = F)
     
         # write.xlsx(anot_all, file = here( "results", "anakinra_KO_bloodtranscriptome_allvsC_afterlimma_annot.xlsx")) 
-    
-    #### 3. Make comparison plots of the significant deregulate circuits ###
-    
-    dereg_circuits_KO <- rownames(top_LimmaALL)
-    
-    dereg_cir_pathvals <- t(path_vals_phy_KO[dereg_circuits_KO,]) %>% as.data.frame(.)
-    
-    dereg_cir_pathvals$type <- c(rep("treated", 1181), rep("disease", 1181))
 
-    # boxplot(P-hsa04064-115 ~ type, data = dereg_cir_pathvals)    
     
-    
-    #### 4. Calculate  and plot the logFC for each sample after KO ###
+    #### 3. Calculate  and plot the logFC for each sample after KO ###
     
     library(patchwork)
     
@@ -445,4 +439,55 @@ exp_data_KO_C <- normalize_data(trans_data_KO_C)
     
     
     
+    
+    
+##################################################################################################
+    
+###################  SIMULATION OF DRUGS FROM GUILLERMO'S MAIL ON FIRST DATASET #############################
+    
+            #######################################################################################
+    
+### 1. Load list of given drugs and drugbank v.5.1.8  and check which are in Hipathia ####
+    
+    ## List of desired drugs to test
+    drugs_totest <- read.delim(file = here("data", "feedback_guillermo_Marzo2021", "drugs_for_testing.tsv"), header = F, sep = " ")
+    colnames(drugs_totest) <- c ( "drug_name", "drug_type")
+    
+    drugbank <- read.delim(file = "/home/m3m/INFO_PROYECTO/drugbank/drugbank_drug-bindings_v5.1.8.tsv", header = T)
+    drugbank <- drugbank[drugbank$drug_binding == "target_gene",]
+    
+    ## Check how many drug names are found in the drugbank 5.1.8 db 
+    sum(drugs_totest$drug_name %in% drugbank$drug_name) ## 18/18 ALL!! ^^ 
+    
+    ## Get gene targets from the desired drugs
+    
+    drug_targetsDF <- drugbank[drugbank$drug_name %in% drugs_totest$drug_name, c(2,4,5,8,9,10,12,13,14)]
+    drug_targetsDF <- drug_targetsDF[which(!is.na(drug_targetsDF$entrez_id)), ]
+    
+    targets <- unique(drug_targetsDF$entrez_id)    
+
+    length(targets) ## 30 gene targets    
+    
+    sum(drugs_totest$drug_name %in% drug_targetsDF$drug_name) ### Check if all the drugs have a targ    et with and entrez ID
+    
+    
+    ## Load Hipathia and chech which targets are in the pathways object
+    
+    sum(targets %in% pathways$all.genes) ## 18/31 en pathways_phy y 20/30 en pathways
+    
+    drug_targetsDF$in_Hipathia <- drug_targetsDF$entrez_id %in% pathways$all.genes
+
+    drug_targetsDF <- drug_targetsDF[drug_targetsDF$in_Hipathia == TRUE , ]    
+    
+    sum(drugs_totest$drug_name %in% drug_targetsDF$drug_name) ## 12/18 can be tested in Hipathia
+    
+    ## Drugs to test which are in Hipathia .. Export for future reports
+    drugs_totest[drugs_totest$drug_name %in% drug_targetsDF$drug_name, ]
+    
+    # write.table(drug_targetsDF, file = here("results", "drugstotest_inHipathia.tsv"), row.names = F, col.names = T, quote = F, sep = "\t")
+    
+    
+    ### 2. USE MADE FUNCTIONS FOR THE KO -- SIMULATING THE DRUG ####
+    
+    KO_drogas <- lapply(drugs_totest$drug_name, function(x){simulate_drug(drug = x, folder = on_1dataset)})
     
