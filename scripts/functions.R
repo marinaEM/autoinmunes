@@ -349,7 +349,7 @@ simulate_drug <- function(drug, expression_matrix = trans_data, metadata_matrix_
     message(paste0("Folder where the results will be saved... ", folder))
   }
   
-  possible_targets <- drug_table$entrez_id[drug_table$drug_name == drug]
+  possible_targets <- unique(drug_table$entrez_id[drug_table$drug_name == drug])
   
   ## Check that the target is in the pathways
   
@@ -585,7 +585,7 @@ simulate_drug_validation <- function(drug, expression_matrix = trans_data, metad
     message(paste0("Folder where the results will be saved... ", folder, " ..located in ./rds and ./results"))
   }
   
-  possible_targets <- drug_table$entrez_id[drug_table$drug_name == drug]
+  possible_targets <- unique(drug_table$entrez_id[drug_table$drug_name == drug])
   
   ## Check that the target is in the pathways
   
@@ -661,7 +661,7 @@ simulate_drug_validation <- function(drug, expression_matrix = trans_data, metad
       anot_all <- data.frame(Circuit = get_path_names(pathways_db, rownames(top_LimmaALL)),
                              logFC = top_LimmaALL$logFC,
                              P.val = top_LimmaALL$P.Value,
-                             FDR.Pval = top_LimmaALL$adj.P.Val,
+                             Bonferroni.adj.Pval = top_LimmaALL$adj.P.Val,
                              UniprotKB = get_pathways_annotations(rownames(top_LimmaALL), pathways_db, dbannot= "uniprot" ,collapse = T),
                              GO = get_pathways_annotations(rownames(top_LimmaALL), pathways_db, dbannot= "GO" ,collapse = T), 
                              stringsAsFactors = F)
@@ -683,10 +683,10 @@ simulate_drug_validation <- function(drug, expression_matrix = trans_data, metad
     names(FC) <- gsub(paste0("_",drug), "", names(FC))
     
     FC_df <- data.frame(patients = names(FC),
-                        logFC = abs(FC),
+                        logFC = FC,
                         ranked_patients = rank(FC),
-                        Diagnosis = metadata_init$diagnosis[match(names(FC), metadata_init$samples)] ,
-                        Cluster =  as.character(metadata_init$cluster[match(names(FC), metadata_init$samples)]) ,
+                        # Diagnosis = metadata_init$diagnosis[match(names(FC), metadata_init$samples)] ,
+                        # Cluster =  as.character(metadata_init$cluster[match(names(FC), metadata_init$samples)]) ,
                         stringsAsFactors = F) %>% .[order(.$ranked_patients, decreasing = F),]
     
     message("Plotting the LogFC ")  

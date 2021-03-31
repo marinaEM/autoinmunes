@@ -76,6 +76,120 @@ drugs_totest[drugs_totest$drug_name %in% drug_targetsDF$drug_name, ]
 
 ### 2. USE MADE FUNCTIONS FOR THE KO -- SIMULATING THE DRUG ####
 
-KO_drogas <- lapply(drugs_totest$drug_name[-1], function(x){simulate_drug_validation(drug = x, folder = "on_2dataset", expression_matrix = trans_data)})
+KO_drogas <- lapply(drugs_totest$drug_name, function(x){simulate_drug_validation(drug = x, folder = "on_2dataset", expression_matrix = trans_data)})
 
+names(KO_drogas) <- drugs_totest$drug_name
+
+KO_drogas <- KO_drogas[!sapply(KO_drogas, is.null)]
+
+saveRDS(KO_drogas, file = here("rds", "KO_drugs", "on_2dataset", "FC_df_12drugs.rds"))
+
+
+### RE DO the plots for those drugs where the line is not well positioned
+
+### Sifalimumab
+        # drug <- "Sifalimumab"
+        # folder <- "on_2dataset/reDO"
+        # mediana <- 0.0005
+        # FC_df <- KO_drogas$Sifalimumab
+
+### Tozilizumab
+
+        drug <- "Tocilizumab"
+        folder <- "on_2dataset/reDO"
+        mediana <- 0.00007
+        FC_df <- KO_drogas$Tocilizumab
+
+        
+        FCs <- ggplot(data = FC_df,
+                      mapping = aes(x = ranked_patients,
+                                    y = logFC,
+                                    color = Cluster)) +
+          ggtitle(paste0('Log FC of the circuits activity absolute values on the ranked patients after simulation of ',drug ,' drug effect' )) +
+          geom_point(size = 3) +
+          geom_hline(yintercept = mediana, linetype = "dashed") +
+          theme_minimal()+
+          theme(axis.title.x = element_text(size = 18),
+                axis.title.y = element_text(size = 18),
+                legend.text = element_text(size = 18),
+                legend.title =  element_text(size = 24),
+                plot.title = element_text(size = 20, face = "bold"))
+        
+        FCs_noCluster2 <- ggplot(data = FC_df[!FC_df$Cluster== "2",],
+                                 mapping = aes(x = ranked_patients,
+                                               y = logFC,
+                                               color = Cluster)) +
+          ggtitle(paste0('Log FC of the circuits activity absolute values on the ranked patients after simulation of ',drug ,' drug effect without Cluster 2' )) +
+          geom_point(size = 3) +
+          geom_hline(yintercept = mediana, linetype = "dashed") +
+          theme_minimal()+
+          theme(axis.title.x = element_text(size = 18),
+                axis.title.y = element_text(size = 18),
+                legend.text = element_text(size = 18),
+                legend.title =  element_text(size = 24),
+                plot.title = element_text(size = 20, face = "bold"))
+        
+        
+        
+        ## With CLUSTER2 
+        bars_df_res <- data.frame(table(FC_df$Cluster[FC_df$logFC >= mediana]))
+        
+        bars_df_NOres <- data.frame(table(FC_df$Cluster[FC_df$logFC < mediana]))
+        
+        bars_responders <- ggplot(data = bars_df_res, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+          ggtitle("High response patients")+
+          geom_bar(stat="identity") +
+          theme_minimal() +
+          theme(axis.title.y = element_blank(),
+                axis.title.x = element_blank(),
+                legend.title = element_blank(),
+                legend.position = "none") +
+          coord_flip()
+        
+        
+        bars_nonresponders <- ggplot(data = bars_df_NOres, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+          ggtitle("Low response patients")+
+          geom_bar(stat="identity") +
+          theme_minimal() +
+          theme(axis.title.y = element_blank(),
+                axis.title.x = element_blank(),
+                legend.title = element_blank(),
+                legend.position = "none") +
+          coord_flip()
+        
+        ## NO CLUSTER2 
+        FCdf_noC2 <- FC_df[FC_df$Cluster!= "2",] 
+        
+        bars_df_res_noCluster2 <- data.frame(table(FCdf_noC2$Cluster[FCdf_noC2$logFC >= mediana]))
+        bars_df_NOres_noCluster2 <- data.frame(table(FCdf_noC2$Cluster[FCdf_noC2$logFC < mediana]))
+        
+        bars_responders_noC2 <- ggplot(data = bars_df_res_noCluster2, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+          ggtitle("High response patients")+
+          geom_bar(stat="identity") +
+          theme_minimal() +
+          theme(axis.title.y = element_blank(),
+                axis.title.x = element_blank(),
+                legend.title = element_blank(),
+                legend.position = "none") +
+          coord_flip()
+        
+        
+        bars_nonresponders_noC2 <- ggplot(data = bars_df_NOres_noCluster2, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+          ggtitle("Low response patients")+
+          geom_bar(stat="identity") +
+          theme_minimal() +
+          theme(axis.title.y = element_blank(),
+                axis.title.x = element_blank(),
+                legend.title = element_blank(),
+                legend.position = "none") +
+          coord_flip()
+        
+        
+        png(filename = here("results", "KO_drugs", folder, paste0("FCplot_validation_",drug,"_KO_clusters.png")), width = 5000, height = 3000, res = 200)
+        print((FCs | bars_responders/plot_spacer()+ bars_nonresponders) + plot_layout(widths = c(3, 1))) 
+        dev.off()
+        
+        png(filename = here("results", "KO_drugs", folder,paste0("FCplot_validation",drug,"_KO_withoutCluster2.png")), width = 5000, height = 3000, res = 200)
+        print((FCs_noCluster2 | bars_responders_noC2/plot_spacer()+ bars_nonresponders_noC2) + plot_layout(widths = c(3, 1))) #+ plot_layout(guides = 'collect')  
+        dev.off()
 
