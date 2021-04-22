@@ -5,7 +5,7 @@
 library(pacman)
 devtools::install_github("thomasp85/patchwork")
 
-pacman::p_load("here", "hipathia", "utils", "stringr", "genefilter", "tidyr","data.table","limma", "ggplot2", "patchwork")
+pacman::p_load("here", "hipathia", "utils", "stringr", "genefilter", "tidyr","data.table","limma", "ggplot2", "patchwork", "pdist")
 
 ## Load normalized expression data
 logcpm <- readRDS(file = here("rds", "logcpm_validating_cohorts.rds"))
@@ -20,6 +20,10 @@ saveRDS(trans_data, file = here("rds", "trans_data_onlydiseases_validationCohort
 metadata_init <- metadata_init[metadata_init$diagnosis != "CTRL",]
 
 metadata_init$type <- "controls"
+
+## Table with the number of diseases in each cluster
+
+cluster_diagnosis_df <- data.frame()
 
 ## Loading Pathways (all and only physiological)
 
@@ -60,9 +64,15 @@ sum(drugs_totest$drug_name %in% drug_targetsDF$drug_name) ### Check if all the d
 
 ## Load Hipathia and chech which targets are in the pathways object
 
-sum(targets %in% pathways$all.genes) ## 18/31 en pathways_phy y 20/30 en pathways
+sum(targets %in% pathways_phy$all.genes) ## 18/30 en pathways_phy y 20/30 en pathways
 
-drug_targetsDF$in_Hipathia <- drug_targetsDF$entrez_id %in% pathways$all.genes
+targets_inHi <- targets[targets %in% pathways$all.genes]  
+
+genes_inWeirdPaths <- data.frame( entrez = targets_inHi[which(!targets[targets %in% pathways$all.genes]  %in% pathways_phy$all.genes)],
+                                  gene = mapIds(org.Hs.eg.db, as.character(targets_inHi[which(!targets[targets %in% pathways$all.genes]  %in% pathways_phy$all.genes)]),
+                                                "SYMBOL", "ENTREZID"))
+
+drug_targetsDF$in_Hipathia <- drug_targetsDF$entrez_id %in% pathways_phy$all.genes
 
 drug_targetsDF <- drug_targetsDF[drug_targetsDF$in_Hipathia == TRUE , ]    
 
@@ -85,7 +95,7 @@ KO_drogas <- KO_drogas[!sapply(KO_drogas, is.null)]
 saveRDS(KO_drogas, file = here("rds", "KO_drugs", "on_2dataset", "FC_df_12drugs.rds"))
 
 
-### RE DO the plots for those drugs where the line is not well positioned
+### RE DO the plots for those drugs where the line is not well positioned ####
 
 ### Sifalimumab
         # drug <- "Sifalimumab"
@@ -192,4 +202,148 @@ saveRDS(KO_drogas, file = here("rds", "KO_drugs", "on_2dataset", "FC_df_12drugs.
         png(filename = here("results", "KO_drugs", folder,paste0("FCplot_validation",drug,"_KO_withoutCluster2.png")), width = 5000, height = 3000, res = 200)
         print((FCs_noCluster2 | bars_responders_noC2/plot_spacer()+ bars_nonresponders_noC2) + plot_layout(widths = c(3, 1))) #+ plot_layout(guides = 'collect')  
         dev.off()
+        
+#############################################################
+#### Re DO the Analysis with the euclidean distance ########
+############################################################
+        
+KO_drogas <- lapply(drugs_totest$drug_name, function(x){simulate_drug_validation_cluster(drug = x, folder = "on_2ds_euclideandistance" , expression_matrix = trans_data, 
+                                                                                 folder_res = "on_2dataset", pathways_db = pathways)})    
 
+names(KO_drogas) <- drugs_totest$drug_name
+        
+KO_drogas <- KO_drogas[!sapply(KO_drogas, is.null)]
+
+
+saveRDS(KO_drogas, file = here("rds", "KO_drugs", "on_2dataset", "FC_df_12drugs_euclideanDistance.rds"))
+## Recalibrate those with different dividing value than the median for TOCILIZUMAB
+
+drug <- "Tocilizumab"
+folder <- "on_2ds_euclideandistance"
+mediana <- 0.0035
+FC_df <- KO_drogas$Tocilizumab
+
+FCs <- ggplot(data = FC_df,
+              mapping = aes(x = Ranked_Patients,
+                            y = Euclidean_Distance,
+                            color = Cluster)) +
+        ggtitle(paste0('Euclidean distance of the circuits activity absolute values \non the ranked patients after simulation of ',drug ,' drug effect' )) +
+        geom_point(size = 3) +
+        geom_hline(yintercept = mediana, linetype = "dashed") +
+        theme_minimal()+
+        theme(axis.title.x = element_text(size = 28),
+              axis.title.y = element_text(size = 28),
+              axis.text.x = element_text(size = 18),
+              axis.text.y = element_text(size = 18),
+              legend.text = element_text(size = 28),
+              legend.title =  element_text(size = 32),
+              plot.title = element_text(size = 26, face = "bold", hjust = 0.5))
+
+FCs_noCluster2 <- ggplot(data = FC_df[!FC_df$Cluster== "2",],
+                         mapping = aes(x = Ranked_Patients,
+                                       y = Euclidean_Distance,
+                                       color = Cluster)) +
+        ggtitle(paste0('Euclidean distance of the circuits activity absolute values \non the ranked patients after simulation of ',drug ,' drug effect without Cluster 2' )) +
+        geom_point(size = 3) +
+        geom_hline(yintercept = mediana, linetype = "dashed") +
+        theme_minimal()+
+        theme(axis.title.x = element_text(size = 28),
+              axis.title.y = element_text(size = 28),
+              axis.text.x = element_text(size = 18),
+              axis.text.y = element_text(size = 18),
+              legend.text = element_text(size = 28),
+              legend.title =  element_text(size = 32),
+              plot.title = element_text(size = 26, face = "bold", hjust = 0.5))
+
+## With CLUSTER2 
+bars_df_res <- data.frame(table(FC_df$Cluster[FC_df$Euclidean_Distance >= mediana]))
+
+bars_df_NOres <- data.frame(table(FC_df$Cluster[FC_df$Euclidean_Distance < mediana]))
+
+bars_responders <- ggplot(data = bars_df_res, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+        ggtitle("High response patients")+
+        geom_bar(stat="identity") +
+        theme_minimal() +
+        theme(axis.title.y = element_blank(),
+              axis.title.x = element_blank(),
+              legend.title = element_blank(),
+              axis.text.y = element_text(face="bold",size= 26),
+              axis.text.x = element_text(face="bold",size= 20),
+              legend.position = "none",
+              plot.title = element_text(size = 26, face = "bold", hjust = 0.5))+
+        scale_y_continuous(limits = c(0, max(bars_df_NOres$Freq, bars_df_res$Freq))) +
+        coord_flip()
+
+
+bars_nonresponders <- ggplot(data = bars_df_NOres, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+        ggtitle("Low response patients")+
+        geom_bar(stat="identity") +
+        theme_minimal() +
+        theme(axis.title.y = element_blank(),
+              axis.title.x = element_blank(),
+              legend.title = element_blank(),
+              axis.text.y = element_text(face="bold",size= 26),
+              axis.text.x = element_text(face="bold",size= 20),
+              legend.position = "none",
+              plot.title = element_text(size = 26, face = "bold", hjust = 0.5)) +
+        scale_y_continuous(limits = c(0, max(bars_df_NOres$Freq, bars_df_res$Freq))) +
+        coord_flip()
+
+
+## NO CLUSTER2 
+FCdf_noC2 <- FC_df[FC_df$Cluster!= "2",] 
+
+bars_df_res_noCluster2 <- data.frame(table(FCdf_noC2$Cluster[FCdf_noC2$Euclidean_Distance >= mediana]))
+bars_df_NOres_noCluster2 <- data.frame(table(FCdf_noC2$Cluster[FCdf_noC2$Euclidean_Distance < mediana]))
+
+bars_responders_noC2 <- ggplot(data = bars_df_res_noCluster2, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+        ggtitle("High response patients")+
+        geom_bar(stat="identity") +
+        theme_minimal() +
+        theme(axis.title.y = element_blank(),
+              axis.title.x = element_blank(),
+              legend.title = element_blank(),
+              axis.text.y = element_text(face="bold",size= 26),
+              axis.text.x = element_text(face="bold",size= 20),
+              legend.position = "none",
+              plot.title = element_text(size = 26, face = "bold", hjust = 0.5))+
+        scale_y_continuous(limits = c(0, max(bars_df_NOres_noCluster2$Freq, bars_df_res_noCluster2$Freq)))+
+        coord_flip()
+
+
+bars_nonresponders_noC2 <- ggplot(data = bars_df_NOres_noCluster2, mapping = aes(x = Var1, y = Freq, fill = Var1)) +
+        ggtitle("Low response patients")+
+        geom_bar(stat="identity") +
+        theme_minimal() +
+        theme(axis.title.y = element_blank(),
+              axis.title.x = element_blank(),
+              legend.title = element_blank(),
+              axis.text.y = element_text(face="bold",size= 26),
+              axis.text.x = element_text(face="bold",size= 20),
+              legend.position = "none",
+              plot.title = element_text(size = 26, face = "bold", hjust = 0.5)) +
+        scale_y_continuous(limits = c(0, max(bars_df_NOres_noCluster2$Freq, bars_df_res_noCluster2$Freq)))+
+        coord_flip()
+
+
+png(filename = here("results", "KO_drugs", folder, paste0("EuDistplot_validation",drug,"_KO_clusters.png")), width = 5000, height = 3000, res = 200)
+print((FCs | bars_responders/plot_spacer()+ bars_nonresponders) + plot_layout(widths = c(3, 1))) 
+dev.off()
+
+png(filename = here("results", "KO_drugs", folder,paste0("EuDistplot_validation",drug,"_KO_withoutCluster2.png")), width = 5000, height = 3000, res = 200)
+print((FCs_noCluster2 | bars_responders_noC2/plot_spacer()+ bars_nonresponders_noC2) + plot_layout(widths = c(3, 1))) #+ plot_layout(guides = 'collect')  
+dev.off()
+
+### Densidad de las Distancias euclídeas
+ggplot(KO_drogas[[12]], aes(x = Euclidean_Distance)) + 
+        geom_density()
+ 
+
+### NOW WITH THE DIAGNOSIS
+
+KO_drogas <- lapply(drugs_totest$drug_name, function(x){simulate_drug_validation_diagnosis(drug = x, folder = "on_2ds_euclideandistance" , expression_matrix = trans_data, 
+                                                                                         folder_res = "on_2dataset_bydiagnosis", pathways_db = pathways)})    
+        
+
+       
+        

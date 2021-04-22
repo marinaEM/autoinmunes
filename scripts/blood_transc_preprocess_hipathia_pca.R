@@ -4,8 +4,9 @@
 
 library(pacman)
 pacman::p_load("here", "rentrez","reutils", "hipathia", "biomaRt", "utils", "stringr", "genefilter", "edgeR",
-               "AnnotationDbi", "org.Hs.eg.db", "hgfocus.db", "tidyr", "preprocessCore", "data.table", "xlsx", "ggplot2")
+               "AnnotationDbi", "org.Hs.eg.db", "hgfocus.db", "tidyr", "preprocessCore", "data.table", "ggplot2")
 
+library("openxlsx")
 
 expreset_raw <- fread(file = "/home/m3m/INFO_PROYECTO/autoinmunes/data/Blood.Transcriptome_Julio2020/CS.Transcriptome.Counts.csv") %>% as.data.frame(.)
 
@@ -106,8 +107,10 @@ print("read...done")
     sample_group_limma <- target_matrix[, c(1,3,4,5,6,7,8,9,10,13)] # Note that for Limma the Control has to be first in the levels
 
     
-    design <- model.matrix( ~ 0  + type + age + gender + antimalarials + immunosuppresants + biologicals + steroids + systemic.antibiotics ,  data = sample_group_limma)
-    colnames(design) <- c( "C", "disease", "age", "gender", "antimalarials", "immunosuppresants","biologicals", "steroids","systemic.antibiotics")
+    design <- model.matrix( ~ 0  + type + age + gender + antimalarials + immunosuppresants + biologicals + steroids + systemic.antibiotics + RIN + pool ,  data = target_matrix)
+    # colnames(design) <- c( "C", "disease", "age", "gender", "antimalarials", "immunosuppresants","biologicals", "steroids","systemic.antibiotics")
+    colnames(design) <- gsub("typeCONTROLS", "C", colnames(design)) 
+    colnames(design) <- gsub("typedisease", "disease", colnames(design)) 
     rownames(design) <- sample_group_limma$samples
     cont.matrix <- makeContrasts( diseasevsC=disease-C, levels=design)
     
@@ -115,7 +118,8 @@ print("read...done")
     fit2 <- contrasts.fit(fit, cont.matrix)
     fit3 <- eBayes(fit2)
     
-    tableLimma <- topTable(fit3, number = rownames(path_vals), adjust.method="fdr", sort.by="p")
+    #tableLimma <- topTable(fit3, number = rownames(path_vals), adjust.method="fdr", sort.by="p") 
+    tableLimma <- topTable(fit3, number = rownames(path_vals), adjust.method="bonferroni", sort.by="p")  ## Lo hcemos con bonferroni a petición de Guillermo
     top_LimmaALL <- tableLimma[tableLimma$adj.P.Val < 0.05,] 
     top_LimmaALL <- top_LimmaALL[order(top_LimmaALL$adj.P.Val, decreasing = F),]
     
@@ -127,11 +131,15 @@ print("read...done")
                           GO = get_pathways_annotations(rownames(top_LimmaALL), pathways, dbannot= "GO" ,collapse = T), 
                           stringsAsFactors = F)
    
-    write.xlsx(anot_all, file = here( "results", "bloodtranscriptome_allvsC_afterlimma_annot.xlsx"))
+    # write.xlsx(anot_all, file = here( "results", "bloodtranscriptome_allvsC_afterlimma_annot.xlsx"))
+    
+     write.xlsx(anot_all, file = here( "results", "bloodtranscriptome_allvsC_afterlimma_annot_bonferroni.xlsx"))
     
     pathways_deregAll <- str_split(anot_all$Circuit, ":") %>% sapply(., function(x){x[1]}) %>% unique(.) ## 61
     
-    write.xlsx(pathways_deregAll, file = here("results","pathways_allvsC.xlsx"),row.names = F)
+    # write.xlsx(pathways_deregAll, file = here("results","pathways_allvsC.xlsx"),row.names = F)
+    
+    write.xlsx(pathways_deregAll, file = here("results","pathways_allvsC_bonferroni.xlsx"),row.names = F)
     
 ### 3. PCA over pathvals ####
     
