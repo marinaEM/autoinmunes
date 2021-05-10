@@ -5,7 +5,8 @@
 
       library(pacman)
       pacman::p_load("here", "dplyr","reutils", "hipathia", "utils", "stringr", "edgeR","data.table",
-                     "AnnotationDbi", "org.Hs.eg.db", "tidyr", "preprocessCore", "ggplot2", "xlsx")
+                     "AnnotationDbi", "org.Hs.eg.db", "tidyr", "preprocessCore", "ggplot2")
+      library(openxlsx)
       
       
       expreset_raw <- fread(file = "/home/m3m/INFO_PROYECTO/autoinmunes/data/feedback_guillermo_Marzo2021/CS.Counts.csv",header = T) %>% as.data.frame(.)
@@ -73,8 +74,10 @@
       saveRDS(results, file = here("rds","validation_cohort_Hiresults.rds"))
       
       path_vals <- get_paths_data(results, matrix = TRUE)
+      path_vals <- normalize_paths(path_vals, pathways)
       
       path_vals_phy <- path_vals[which(rownames(path_vals) %in% subpathways_phy$hipathia),]
+      path_vals_phy <- normalize_paths(path_vals_phy, pathways)
       
       ## Load updated annotations and annotation object to subtitute
       hp <- hipathia:::hub()
