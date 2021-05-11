@@ -50,6 +50,8 @@ pacman::p_load("here", "hipathia", "utils", "stringr", "genefilter", "tidyr","da
   tableLimma <- topTable(fit3, number = rownames(path_vals_phy), adjust.method="bonferroni", sort.by="p")
   top_LimmaALL <- tableLimma[tableLimma$adj.P.Val < 0.05,] 
   top_LimmaALL <- top_LimmaALL[order(top_LimmaALL$adj.P.Val, decreasing = F),]
+  
+  saveRDS(top_LimmaALL, file = here("rds", "top_LimmaALL_validationCohort_allvsC.rds"))
 
   anot_all <- data.frame(Circuit = get_path_names(pathways, rownames(top_LimmaALL)),
                         logFC = top_LimmaALL$logFC,
