@@ -1057,3 +1057,305 @@ simulate_drug_validation_diagnosis <- function(drug, expression_matrix = trans_d
   }
   
 }
+
+
+
+############################################################################################
+#### Function to do histogram plot of the X top changing circuits (after KO_effect) after measured by a t-test, comparing 
+#### drug_KO effect vs Controls vs Diseases  14.04.2021
+###############################################
+
+
+plot_hist_drugEffvsC_topX <- function(pathvals_controls, pathvals_disease, pathvals_drugEff, folder , metadata_table = metadata ,top_LimmaALL_table = top_LimmaALL, cluster2 = T,
+                                       totalDeregcir_plot = 100 ){
+  
+  require(ggplot2)
+  
+  ## We extract drugs effect.
+  drug_name <- unique(str_split(colnames(pathvals_drugEff), "_")[[1]][2])
+  
+  ## Clean up the names from the drug for later filtering samples.
+  colnames(pathvals_drugEff) <- gsub(paste0("_", drug_name), "", colnames(pathvals_drugEff))
+  
+  
+  ## Select the number of top deregulated circuits from top_LimmaALL, which are the top deregulated circuits ordered by Bonferroni corrected p-values 
+  ## from the comparison between all disease samples versus Controls.
+  if(is.numeric(totalDeregcir_plot)){
+    
+    message(paste0("Calculating histograms comparisons plots for ", drug_name, " in top ", totalDeregcir_plot, " deregulated circuits"))
+    
+  }else{
+    message("Incorrect value for the attribute totalDeregcir_plot, the value must be a positive integer")
+  }
+  
+  ## Read table of top deregulated circuits 
+  
+  top_dereg <- rownames(top_LimmaALL_table)[1:totalDeregcir_plot]
+  # top_dereg <- rownames(top_LimmaALL_table)
+  
+  ## Do a t-test to check which differences are relevant
+  
+  vals_dis <- pathvals_disease[top_dereg,]
+  vals_drugeff <- pathvals_drugEff[top_dereg,]
+  
+  diff <- data.frame(cir = rownames(vals_dis), 
+                     sig = sapply(1:nrow(vals_dis), function(x) t.test(vals_dis[x,], vals_drugeff[x,])$p.value), stringsAsFactors = F) 
+  
+  diff <- diff[diff$sig < 0.05, ] %>%  .[order(.$sig, decreasing = F),] 
+  diff$cir_names <- get_path_names(pathways, as.character(diff$cir))
+  
+  write.table(diff, file = here("results", "KO_drugs", folder, paste0(drug_name,"Ttest_significantCir.tsv")), 
+              row.names = F, col.names = T, quote = F, sep = "\t")                              
+  
+  ## Ordering most changinf circuits after drug effect based in the differences in the median (NOT THE BEST, BETTER DOING A t-test)
+  # diff_dis_drug <- data.frame(cir = rownames(pathvals_disease),diff = abs(apply(pathvals_disease, 1, median) - apply(pathvals_drugEff, 1, median)), stringsAsFactors = F)
+  # diff_dis_drug <- diff_dis_drug[diff_dis_drug$cir %in% top_dereg, ]
+  # diff_dis_drug <- diff_dis_drug[order(diff_dis_drug$diff, decreasing = F),]
+  # diff_dis_drug <- diff_dis_drug[diff_dis_drug$diff > 0.0001,]
+  # diff_dis_drug$cir_names <- get_path_names(pathways, as.character(diff_dis_drug$cir))
+  
+  
+  ## Read de controls and disease data and reshape to stack it!!
+  idxC <- which(rownames(pathvals_controls) %in% diff$cir)
+  dat_c <- stack(as.data.frame(t(pathvals_controls[idxC,])))
+  dat_c <- dat_c[order(dat_c$values, decreasing = F ),]
+  dat_c$group <- "Control"
+  
+  
+  if(cluster2 == F){
+    
+    idx <- which(rownames(pathvals_drugEff) %in%  diff$cir)
+    dat_drug <- pathvals_drugEff[idx, colnames(pathvals_drugEff) %in% metadata_table$samples[metadata_table$cluster != 2]]
+    dat_drug <- stack(as.data.frame(t(dat_drug)))
+    dat_drug$group <- "Drug-treated"
+    
+    idxD <- which(rownames(pathvals_disease) %in%  diff$cir)
+    dat_d <- stack(as.data.frame(t(pathvals_disease[idxD, colnames(pathvals_disease) %in% metadata_table$samples[metadata_table$cluster != 2]])))
+    dat_d$group <- "Disease"
+    
+    message("NOT INCLUDING CLUSTER 2") 
+    
+    title_plot <- "no_Cluster2"
+    
+    C2 <- "without Cluster 2"
+    
+  } else {
+    
+    idx <- which(rownames(pathvals_drugEff) %in% diff$cir )
+    dat_drug <- pathvals_drugEff[idx, ]
+    dat_drug <- stack(as.data.frame(t(dat_drug)))
+    dat_drug$group <- "Drug-treated"
+    
+    idxD <- which(rownames(pathvals_disease) %in% diff$cir )
+    dat_d <- stack(as.data.frame(t(pathvals_disease[idxD,])))
+    dat_d$group <- "Disease"
+    
+    message("INCLUDING CLUSTER 2") 
+    
+    title_plot <- "with_Cluster2"
+    
+    C2 <- ""
+    
+  }
+  
+  
+  dat <- rbind(dat_c, dat_d, dat_drug)
+  colnames(dat) <- c("activation_values", "circuits", "Group") 
+  dat_plot <- dat
+  dat_plot$circuits <- get_path_names(pathways, as.character(dat_plot$circuits))
+  dat_plot$circuits <- factor(dat_plot$circuits, levels = diff$cir_names, ordered = T)
+  
+  
+  
+  p <- ggplot(dat_plot, aes(x = circuits, y = activation_values, fill = Group)) + 
+    ggtitle(paste0('Distribution of the circuits activity absolute values \n from the most affected circuits after simulation of ',drug_name ,' effect ', C2)) +
+    geom_boxplot(outlier.fill = "black", outlier.size = 0.025, varwidth=T, lwd = 0.05 ) +
+    # theme_minimal() +
+    theme( axis.title.y = element_blank(),
+           panel.grid = element_line(),
+           axis.title.x = element_blank(),
+           axis.text.y = element_text(size= 18),
+           axis.text.x = element_text(angle = 90, vjust = 0.5, hjust= 0, size = 4),
+           legend.title = element_text(size = 20),
+           legend.text = element_text(size = 18),
+           plot.title = element_text(size = 22, face = "bold", hjust = 0.5))
+  
+  
+  # png(filename = here("results", "KO_drugs", folder, paste0(drug_name, title_plot,"vsC_boxplots.png")), width = 12000, height = 7000, res = 600)
+  ggsave(filename = here("results", "KO_drugs", folder, paste0(drug_name, title_plot,"vsC_boxplots.png")), plot = p, dpi = 400, width = 18, height = 8)
+  # dev.new()
+  # p    
+  # dev.off()
+  
+  return(dat_plot)
+  
+}
+
+
+
+
+############################################################################################
+#### Function to get a resume table and do boxplots after drugs simulations on Disease samples of the activity values of the circuits that changed towards the Controls activity values 
+#### from the top deregulated circuits after measured by a t-test, comparing drug_KO effect vs Controls vs Diseases  05.08.2021
+###############################################
+
+plot_boxplots_drugEffvsCvsD_topDeregulatedCir_withoppositeDirection <- function(pathvals_controls, pathvals_disease, pathvals_drugEff, folder , 
+                                                                                metadata_table = metadata ,top_LimmaALL_table = top_LimmaALL, cluster2 = T){
+  
+  require(ggplot2)
+  
+  ## Extract the drug effect and the name of the drug
+  drug_name <- unique(str_split(colnames(pathvals_drugEff), "_")[[1]][2])
+  
+  ## Clean up the names from the drug for later filtering samples.
+  colnames(pathvals_drugEff) <- gsub(paste0("_", drug_name), "", colnames(pathvals_drugEff))
+  
+  
+  ## Read table of top deregulated circuits 
+  
+  top_dereg <- rownames(top_LimmaALL_table)#[1:totalDeregcir_plot]
+  
+  
+  ## Do a t-test to check which differences are relevant
+  
+  vals_dis <- pathvals_disease[top_dereg,]
+  vals_drugeff <- pathvals_drugEff[top_dereg,]
+  
+  diff <- data.frame(cir = rownames(vals_dis), 
+                     Boferroni.pval.Ttest = sapply(1:nrow(vals_dis), function(x) t.test(vals_dis[x,], vals_drugeff[x,])$p.value), 
+                     Bonferroni.pval.DvsC = top_LimmaALL_table$adj.P.Val[match(rownames(vals_dis), rownames(top_LimmaALL_table))] ,
+                     stringsAsFactors = F)
+  
+  diff$Boferroni.pval.Ttest <- stats::p.adjust(diff$Boferroni.pval.Ttest, method = "bonferroni" )
+  
+  diff <- diff[diff$Boferroni.pval.Ttest < 0.05, ] %>%  .[order(.$Boferroni.pval.Ttest, decreasing = F),] 
+  diff$cir_names <- get_path_names(pathways, as.character(diff$cir))
+  diff$median_C <- apply(pathvals_controls[diff$cir,], 1, median)
+  diff$median_D <- apply(pathvals_disease[diff$cir,], 1, median)
+  diff$median_T <- apply(pathvals_drugEff[diff$cir,], 1, median)
+  
+  
+  for (i in 1: dim(diff)[1]){
+    
+    if(log2(diff$median_D[i]) - log2(diff$median_C[i])>=0){
+      
+      diff$FC.DvsC <- log2(diff$median_D[i]) - log2(diff$median_C[i])
+      diff$FC.TvsD <- log2(diff$median_T[i]) - log2(diff$median_D[i])
+      diff$disease_regulation[i] <- "UP-REGULATION"
+      
+      
+    }else{
+      
+      diff$FC.DvsC <- log2(diff$median_D[i]) - log2(diff$median_C[i])
+      diff$FC.TvsD <- log2(diff$median_T[i]) - log2(diff$median_D[i])
+      diff$disease_regulation[i] <- "DOWN-REGULATION"
+      
+    }
+    
+    
+  }
+  
+  
+  for (i in 1: dim(diff)[1]){
+    
+    if(log2(diff$median_D[i]) - log2(diff$median_T[i])>=0){
+      
+      diff$treatment_direction[i] <- "DOWN-REGULATION"
+      
+    }else{
+      
+      diff$treatment_direction[i] <- "UP-REGULATION"
+      
+    }
+    
+    
+  }
+  
+  
+  ### FILTER OUT ONLY THOSE THAT GO IN THE CORRECT DIRECTION
+  
+  diff <- diff[which(diff$disease_regulation != diff$treatment_direction), ]
+  
+  
+  write.table(diff, file = here("results", "KO_drugs", folder, paste0(drug_name,"Ttest_treatment_direction.tsv")), 
+              row.names = F, col.names = T, quote = F, sep = "\t")   
+  
+  ## Read de controls and disease data and reshape to stack it!!
+  idxC <- which(rownames(pathvals_controls) %in% diff$cir)
+  dat_c <- stack(as.data.frame(t(pathvals_controls[idxC,])))
+  dat_c <- dat_c[order(dat_c$values, decreasing = F ),]
+  dat_c$group <- "Control"
+  
+  
+  if(cluster2 == F){
+    
+    idx <- which(rownames(pathvals_drugEff) %in%  diff$cir)
+    dat_drug <- pathvals_drugEff[idx, colnames(pathvals_drugEff) %in% metadata_table$samples[metadata_table$cluster != 2]]
+    dat_drug <- stack(as.data.frame(t(dat_drug)))
+    dat_drug$group <- "Drug-treated"
+    
+    idxD <- which(rownames(pathvals_disease) %in%  diff$cir)
+    dat_d <- stack(as.data.frame(t(pathvals_disease[idxD, colnames(pathvals_disease) %in% metadata_table$samples[metadata_table$cluster != 2]])))
+    dat_d$group <- "Disease"
+    
+    message("NOT INCLUDING CLUSTER 2") 
+    
+    title_plot <- "no_Cluster2"
+    
+    C2 <- "without Cluster 2"
+    
+  } else {
+    
+    idx <- which(rownames(pathvals_drugEff) %in% diff$cir )
+    dat_drug <- pathvals_drugEff[idx, ]
+    dat_drug <- stack(as.data.frame(t(dat_drug)))
+    dat_drug$group <- "Drug-treated"
+    
+    idxD <- which(rownames(pathvals_disease) %in% diff$cir )
+    dat_d <- stack(as.data.frame(t(pathvals_disease[idxD,])))
+    dat_d$group <- "Disease"
+    
+    message("INCLUDING CLUSTER 2") 
+    
+    title_plot <- "with_Cluster2"
+    
+    C2 <- ""
+    
+  }
+  
+  
+  dat <- rbind(dat_d, dat_c, dat_drug)
+  colnames(dat) <- c("activation_values", "circuits", "Group") 
+  dat_plot <- dat
+  dat_plot <- dat_plot[order(dat_plot$activation_values, decreasing = F), ]
+  dat_plot$circuits <- get_path_names(pathways, as.character(dat_plot$circuits))
+  # dat_plot$circuits <- factor(dat_plot$circuits, levels =  diff$cir_names[match(top_dereg, diff$cir)], ordered = T) ## Order by higer adj.pvalue
+  dat_plot$circuits <- factor(dat_plot$circuits, levels =  unique(dat_plot$circuits), ordered = T)
+  dat_plot$Group <- factor(dat_plot$Group, levels = unique(dat_plot$Group))
+  
+  
+  p <- ggplot(dat_plot, aes(x = circuits, y = activation_values, fill = Group)) + 
+    ggtitle(paste0('Distribution of the circuits activity absolute values \n from the most affected circuits after simulation of ',drug_name ,' effect ', C2)) +
+    geom_boxplot(outlier.fill = "black", outlier.size = 0.025, varwidth=T, lwd = 0.05 ) +
+    # theme_minimal() +
+    theme( axis.title.y = element_blank(),
+           panel.grid = element_line(),
+           axis.title.x = element_blank(),
+           axis.text.y = element_text(size= 18),
+           axis.text.x = element_text(angle = 90, vjust = 0.5, hjust= 1, size = 8, face = "bold", margin = margin(0)),
+           legend.title = element_text(size = 20),
+           legend.text = element_text(size = 18),
+           plot.title = element_text(size = 22, face = "bold", hjust = 0.5))
+  
+  
+  # png(filename = here("results", "KO_drugs", folder, paste0(drug_name, title_plot,"vsC_boxplots.png")), width = 12000, height = 7000, res = 600)
+  ggsave(filename = here("results", "KO_drugs", folder, paste0(drug_name, title_plot,"vsC_boxplots.png")), plot = p, dpi = 400, width = 18, height = 8)
+  # dev.new()
+  # p    
+  # dev.off()
+  
+  return(dat_plot)
+  
+}
+
+
